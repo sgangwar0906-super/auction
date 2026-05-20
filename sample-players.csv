@@ -1,10 +1,10 @@
 name,base price,set,role,points
-Virat Kohli,20000000,marquee,Batsman,95
-Rohit Sharma,20000000,marquee,Batsman,90
-Shubman Gill,12000000,batsmen set-1,Batsman,84
-KL Rahul,14000000,wk batsmen set-1,WK Batsman,82
-Hardik Pandya,16000000,all rounders set-1,All Rounder,88
-Jasprit Bumrah,18000000,bowlers set-1,Bowler,92
+Virat Kohli,20000000,marquee batsmen set-1,Batsman,95
+Rohit Sharma,20000000,marquee batsmen set-1,Batsman,90
+KL Rahul,14000000,marquee wk batsmen set-1,WK Batsman,82
+Hardik Pandya,16000000,marquee all rounders set-1,All Rounder,88
+Jasprit Bumrah,18000000,marquee bowlers set-1,Bowler,92
+Shubman Gill,12000000,batsmen set-2,Batsman,84
 Ruturaj Gaikwad,10000000,batsmen set-2,Batsman,78
 Sanju Samson,11000000,wk batsmen set-2,WK Batsman,80
 Ravindra Jadeja,15000000,all rounders set-2,All Rounder,87

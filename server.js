@@ -11,15 +11,18 @@ const AUCTION_MS = 15000;
 const RESULT_MS = 1000;
 
 const ORDER = [
-  "marquee",
-  "batsmen set-1",
-  "wk batsmen set-1",
-  "all rounders set-1",
-  "bowlers set-1",
+  "marquee batsmen set-1",
+  "marquee wk batsmen set-1",
+  "marquee all rounders set-1",
+  "marquee bowlers set-1",
   "batsmen set-2",
   "wk batsmen set-2",
   "all rounders set-2",
-  "bowlers set-2"
+  "bowlers set-2",
+  "batsmen set-3",
+  "wk batsmen set-3",
+  "all rounders set-3",
+  "bowlers set-3"
 ];
 
 function id(size = 6) {
@@ -39,17 +42,25 @@ function norm(value) {
 }
 
 function normalizeSet(value) {
-  const set = norm(value).replace(/bowlerse/g, "bowlers").replace(/wicket keeper/g, "wk");
-  if (set.includes("marquee")) return "marquee";
-  if (set.includes("wk") && set.includes("2")) return "wk batsmen set-2";
-  if (set.includes("wk")) return "wk batsmen set-1";
-  if (set.includes("all") && set.includes("2")) return "all rounders set-2";
-  if (set.includes("all")) return "all rounders set-1";
-  if ((set.includes("bowler") || set.includes("bowlers")) && set.includes("2")) return "bowlers set-2";
-  if (set.includes("bowler") || set.includes("bowlers")) return "bowlers set-1";
-  if (set.includes("bat") && set.includes("2")) return "batsmen set-2";
-  if (set.includes("bat")) return "batsmen set-1";
-  return set || "unsorted";
+  const raw = norm(value)
+    .replace(/bowlerse/g, "bowlers")
+    .replace(/wicket[-\s]*keeper/g, "wk")
+    .replace(/[-_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "unsorted";
+
+  const words = new Set(raw.split(" "));
+  const setNo = (raw.match(/\bset\s*(\d+)\b/) || [])[1] || (words.has("marquee") ? "1" : "");
+  const number = setNo || "1";
+  const isSetOne = number === "1";
+  const prefix = isSetOne ? "marquee " : "";
+
+  if (words.has("wk") || raw.includes("wicket keeper")) return `${prefix}wk batsmen set-${number}`;
+  if (words.has("all") && (words.has("rounder") || words.has("rounders"))) return `${prefix}all rounders set-${number}`;
+  if (words.has("bowler") || words.has("bowlers")) return `${prefix}bowlers set-${number}`;
+  if (words.has("batsman") || words.has("batsmen") || words.has("batter") || words.has("batters")) return `${prefix}batsmen set-${number}`;
+  return raw;
 }
 
 function send(res, status, data, type = "application/json") {
@@ -190,7 +201,7 @@ function rowsToPlayers(rows) {
     id: `P${i + 1}-${id(4)}`,
     name: String(row[nameI] || "").trim(),
     basePrice: money(row[baseI]),
-    set: normalizeSet(row[setI]),
+    set: normalizeSet(row[setI] || row[roleI]),
     role: String(row[roleI] || "").trim() || "Player",
     points: money(row[pointsI]),
     status: "waiting",
@@ -484,6 +495,33 @@ async function api(req, res) {
       if (!player) throw new Error("No active player.");
       if (room.status === "paused") room.status = "live";
       settleActive(room, true);
+      return send(res, 200, publicRoom(room));
+    }
+
+    if (req.method === "POST" && req.url.match(/^\/api\/rooms\/[^/]+\/sell$/)) {
+      const room = requireRoom(req.url.split("/")[3]);
+      requireHost(room, req.headers["x-host-token"]);
+      const player = room.players[room.currentIndex];
+      if (!player) throw new Error("No active player.");
+      if (player.status !== "waiting") throw new Error("Wait for the next player.");
+      if (!room.highestBidder) throw new Error("There is no current bidder to sell to.");
+      if (room.status === "paused") room.status = "live";
+      settleActive(room);
+      return send(res, 200, publicRoom(room));
+    }
+
+    if (req.method === "POST" && req.url.match(/^\/api\/rooms\/[^/]+\/end$/)) {
+      const room = requireRoom(req.url.split("/")[3]);
+      requireHost(room, req.headers["x-host-token"]);
+      clearClock(room);
+      clearResultDelay(room);
+      room.status = "finished";
+      room.timerEndsAt = null;
+      room.pausedRemainingMs = null;
+      room.currentBid = 0;
+      room.highestBidder = null;
+      room.message = "Auction ended by host.";
+      broadcast(room);
       return send(res, 200, publicRoom(room));
     }
 

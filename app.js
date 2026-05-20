@@ -110,8 +110,10 @@ function render() {
   const mine = myTeam();
   $("hostPanel").classList.toggle("hidden", !isHost);
   $("hostTeamForm").classList.toggle("hidden", !isHost || Boolean(mine));
+  $("sellBtn").classList.toggle("hidden", !isHost);
   $("skipBtn").classList.toggle("hidden", !isHost);
   $("pauseBtn").classList.toggle("hidden", !isHost || !["live", "paused"].includes(state.status));
+  $("endBtn").classList.toggle("hidden", !isHost || !["lobby", "live", "paused"].includes(state.status));
   $("startBtn").classList.toggle("hidden", !isHost || state.status !== "lobby");
   $("shareLink").value = `${location.origin}${location.pathname}?room=${state.code}`;
 
@@ -126,6 +128,7 @@ function render() {
 
   const canBid = state.status === "live" && p?.status === "waiting" && mine && state.highestBidder !== teamId;
   $("bidBtn").disabled = !canBid;
+  $("sellBtn").disabled = !p || p.status !== "waiting" || !state.highestBidder || !["live", "paused"].includes(state.status);
   $("skipBtn").disabled = !p || p.status !== "waiting" || !["live", "paused"].includes(state.status);
   $("pauseBtn").disabled = !p || p.status !== "waiting";
   $("pauseBtn").textContent = state.status === "paused" ? "Resume Auction" : "Pause Auction";
@@ -259,6 +262,16 @@ $("startBtn").addEventListener("click", () => {
 $("skipBtn").addEventListener("click", () => {
   unlockSound();
   api(`/api/rooms/${state.code}/skip`, { method: "POST", body: "{}" }).catch((e) => alert(e.message));
+});
+
+$("sellBtn").addEventListener("click", () => {
+  unlockSound();
+  api(`/api/rooms/${state.code}/sell`, { method: "POST", body: "{}" }).catch((e) => alert(e.message));
+});
+
+$("endBtn").addEventListener("click", () => {
+  unlockSound();
+  api(`/api/rooms/${state.code}/end`, { method: "POST", body: "{}" }).catch((e) => alert(e.message));
 });
 
 $("pauseBtn").addEventListener("click", () => {

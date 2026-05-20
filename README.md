@@ -18,7 +18,7 @@ Open `http://localhost:3000`.
 4. Share the room link with friends.
 5. Start the auction.
 
-The host can join as a bidding team, pause/resume the live auction, and skip the current player. Every player gets a 15 second timer, and every new bid resets it. When the timer reaches zero, the player is sold to the highest bidder or marked unsold if there is no bid. The sold/unsold popup is shown briefly before the next player appears.
+The host can join as a bidding team, pause/resume/end the live auction, sell the current player immediately to the current bidder, and skip the current player. Every player gets a 15 second timer, and every new bid resets it. When the timer reaches zero, the player is sold to the highest bidder or marked unsold if there is no bid. The sold/unsold popup is shown briefly before the next player appears.
 
 ## Player Sheet Columns
 
@@ -31,15 +31,18 @@ name,base price,set,role,points
 Supported auction sets are run in this order:
 
 ```text
-marquee
-batsmen set-1
-wk batsmen set-1
-all rounders set-1
-bowlers set-1
+marquee batsmen set-1
+marquee wk batsmen set-1
+marquee all rounders set-1
+marquee bowlers set-1
 batsmen set-2
 wk batsmen set-2
 all rounders set-2
 bowlers set-2
+batsmen set-3
+wk batsmen set-3
+all rounders set-3
+bowlers set-3
 ```
 
 `sample-players.csv` is included for testing.
