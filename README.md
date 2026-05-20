@@ -10,6 +10,17 @@ npm start
 
 Open `http://localhost:3000`.
 
+## Render Deployment
+
+Render can use:
+
+```text
+Build Command: npm install && npm run build
+Start Command: npm start
+```
+
+The server uses Render's `PORT` environment variable, serves `dist/` when a React build exists, and falls back to `public/` for this static version. Client-side routes fall back to `index.html`.
+
 ## Host Flow
 
 1. Enter the budget per team and bid step, such as `100 cr` and `10 lakh`.

@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "build": "node -e \"console.log('Build step complete. Server will serve dist/ when present, otherwise public/.')\"",
     "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
   },
   "engines": {
     "node": ">=18"

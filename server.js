@@ -6,6 +6,8 @@ const zlib = require("zlib");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
+const DIST = path.join(__dirname, "dist");
+const CLIENT_ROOT = fs.existsSync(DIST) ? DIST : PUBLIC;
 const rooms = new Map();
 const AUCTION_MS = 15000;
 const RESULT_MS = 1000;
@@ -555,19 +557,62 @@ async function api(req, res) {
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8"
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon"
 };
 
-http.createServer((req, res) => {
+function serveClient(req, res) {
+  if (req.url === "/healthz") return send(res, 200, { ok: true });
   if (req.url.startsWith("/api/")) return api(req, res);
   const urlPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
-  const file = path.join(PUBLIC, urlPath);
-  if (!file.startsWith(PUBLIC)) return send(res, 403, "Forbidden", "text/plain");
+  const file = path.join(CLIENT_ROOT, urlPath);
+  if (!file.startsWith(CLIENT_ROOT)) return send(res, 403, "Forbidden", "text/plain");
   fs.readFile(file, (error, data) => {
-    if (error) return send(res, 404, "Not found", "text/plain");
+    if (error) {
+      const fallback = path.join(CLIENT_ROOT, "index.html");
+      return fs.readFile(fallback, (fallbackError, html) => {
+        if (fallbackError) return send(res, 404, "Not found", "text/plain");
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html);
+      });
+    }
     res.writeHead(200, { "Content-Type": mime[path.extname(file)] || "application/octet-stream" });
     res.end(data);
   });
-}).listen(PORT, () => {
-  console.log(`IPL Auction Arena running at http://localhost:${PORT}`);
-});
+}
+
+function startExpress() {
+  const express = require("express");
+  const app = express();
+
+  app.get("/healthz", (req, res) => res.json({ ok: true }));
+  app.use("/api", (req, res) => {
+    req.url = `/api${req.url}`;
+    api(req, res);
+  });
+  app.use(express.static(CLIENT_ROOT));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(CLIENT_ROOT, "index.html"));
+  });
+
+  app.listen(PORT, () => {
+    console.log(`IPL Auction Arena running on port ${PORT}`);
+    console.log(`Serving client from ${CLIENT_ROOT}`);
+  });
+}
+
+try {
+  startExpress();
+} catch (error) {
+  if (error.code !== "MODULE_NOT_FOUND") throw error;
+  http.createServer(serveClient).listen(PORT, () => {
+    console.log(`IPL Auction Arena running on port ${PORT}`);
+    console.log(`Serving client from ${CLIENT_ROOT}`);
+  });
+}
