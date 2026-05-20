@@ -7,7 +7,9 @@ let teamRoom = localStorage.getItem("iplTeamRoom") || "";
 let roomCode = new URLSearchParams(location.search).get("room") || localStorage.getItem("iplRoom") || "";
 let events = null;
 let lastResultId = "";
+let hasSnapshot = false;
 let soundReady = false;
+let resultCloseTimer = null;
 
 function fmt(value) {
   return Number(value || 0).toLocaleString("en-IN");
@@ -71,12 +73,20 @@ function connect(code) {
   roomCode = code.toUpperCase();
   localStorage.setItem("iplRoom", roomCode);
   history.replaceState(null, "", `?room=${roomCode}`);
+  lastResultId = "";
+  hasSnapshot = false;
   events = new EventSource(`/api/rooms/${roomCode}/events`);
   events.onmessage = (event) => {
     state = JSON.parse(event.data);
     render();
-    if (state.lastResult?.id && state.lastResult.id !== lastResultId) {
-      lastResultId = state.lastResult.id;
+    const resultId = state.lastResult?.id || "";
+    if (!hasSnapshot) {
+      lastResultId = resultId;
+      hasSnapshot = true;
+      return;
+    }
+    if (resultId && resultId !== lastResultId) {
+      lastResultId = resultId;
       showResult(state.lastResult);
     }
   };
@@ -95,8 +105,11 @@ function render() {
   $("setup").classList.add("hidden");
   $("app").classList.remove("hidden");
   $("roomPill").textContent = `Room ${state.code}`;
+
   const isHost = Boolean(hostToken && hostRoom === state.code);
+  const mine = myTeam();
   $("hostPanel").classList.toggle("hidden", !isHost);
+  $("hostTeamForm").classList.toggle("hidden", !isHost || Boolean(mine));
   $("skipBtn").classList.toggle("hidden", !isHost);
   $("pauseBtn").classList.toggle("hidden", !isHost || !["live", "paused"].includes(state.status));
   $("startBtn").classList.toggle("hidden", !isHost || state.status !== "lobby");
@@ -111,33 +124,39 @@ function render() {
   $("highestBidder").textContent = teamName(state.highestBidder);
   $("message").textContent = state.message || "";
 
-  const mine = myTeam();
-  const canBid = state.status === "live" && p && mine && state.highestBidder !== teamId;
+  const canBid = state.status === "live" && p?.status === "waiting" && mine && state.highestBidder !== teamId;
   $("bidBtn").disabled = !canBid;
-  $("skipBtn").disabled = !p || !["live", "paused"].includes(state.status);
-  $("pauseBtn").disabled = !p;
+  $("skipBtn").disabled = !p || p.status !== "waiting" || !["live", "paused"].includes(state.status);
+  $("pauseBtn").disabled = !p || p.status !== "waiting";
   $("pauseBtn").textContent = state.status === "paused" ? "Resume Auction" : "Pause Auction";
   $("startBtn").disabled = !state.players.length;
   $("bidBtn").textContent = mine ? `Bid as ${mine.name}` : "Join to Bid";
 
-  $("leaderboardTitle").textContent = state.status === "finished" ? "Final Leaderboard" : "Teams";
+  $("leaderboardTitle").textContent = state.status === "finished" ? "Final Leaderboard" : "Live Budgets & Squads";
   $("leaderboard").innerHTML = [...state.teams]
     .sort((a, b) => state.status === "finished" ? b.points - a.points || a.spent - b.spent : a.name.localeCompare(b.name))
     .map((team, index) => `
-      <div class="row">
-        <span class="badge">${state.status === "finished" ? index + 1 : team.players}</span>
-        <div><strong>${team.name}</strong><br><small>${team.players} players - ${fmtMoney(team.remaining)} left</small></div>
-        <strong>${state.status === "finished" ? `${fmt(team.points)} pts` : fmtMoney(team.spent)}</strong>
-      </div>
+      <article class="team-card">
+        <div class="team-head">
+          <div>
+            <h3>${state.status === "finished" ? `${index + 1}. ` : ""}${team.name}</h3>
+            <small>${team.players} players bought - spent ${fmtMoney(team.spent)}</small>
+          </div>
+          <div class="team-money">
+            ${state.status === "finished" ? `${fmt(team.points)} pts` : fmtMoney(team.remaining)}
+            <br><small>${state.status === "finished" ? "total points" : "remaining"}</small>
+          </div>
+        </div>
+        <div class="squad-list">
+          ${team.squad.length ? team.squad.map((player) => `
+            <div class="squad-row">
+              <div><strong>${player.name}</strong><br><small>${player.role} - ${fmtMoney(player.soldFor)}</small></div>
+              <span class="status">${state.status === "finished" ? `${fmt(player.points)} pts` : player.set}</span>
+            </div>
+          `).join("") : `<p class="hint">No players bought yet.</p>`}
+        </div>
+      </article>
     `).join("") || `<p class="hint">Waiting for teams to join.</p>`;
-
-  $("queue").innerHTML = state.players.map((player, index) => `
-    <div class="row">
-      <span class="badge">${index + 1}</span>
-      <div><strong>${player.name}</strong><br><small>${player.set} - ${player.role} - ${fmtMoney(player.basePrice)}</small></div>
-      <span class="status">${player.status}${player.soldTo ? `: ${teamName(player.soldTo)}` : ""}</span>
-    </div>
-  `).join("") || `<p class="hint">Upload an Excel or CSV player list.</p>`;
 
   $("playersList").innerHTML = state.players.map((player, index) => `
     <div class="row">
@@ -148,6 +167,10 @@ function render() {
   `).join("") || `<p class="hint">Upload an Excel or CSV player list.</p>`;
 }
 
+function closeResult() {
+  $("resultModal").classList.add("hidden");
+}
+
 function showResult(result) {
   playResultSound(result.type);
   $("resultType").textContent = result.type === "sold" ? "Sold" : "Unsold";
@@ -156,6 +179,8 @@ function showResult(result) {
     ? `Sold to ${result.team} for ${fmtMoney(result.amount)}.`
     : "Unsold. No team bought this player.";
   $("resultModal").classList.remove("hidden");
+  if (resultCloseTimer) clearTimeout(resultCloseTimer);
+  resultCloseTimer = setTimeout(closeResult, 1000);
 }
 
 function tick() {
@@ -189,17 +214,27 @@ $("joinForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   unlockSound();
   const form = new FormData(event.currentTarget);
-  const code = String(form.get("code")).toUpperCase();
+  await joinTeam(String(form.get("code")).toUpperCase(), form.get("teamName"));
+});
+
+$("hostTeamForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  unlockSound();
+  const form = new FormData(event.currentTarget);
+  await joinTeam(state.code, form.get("teamName"));
+});
+
+async function joinTeam(code, teamName) {
   const data = await api(`/api/rooms/${code}/join`, {
     method: "POST",
-    body: JSON.stringify({ teamName: form.get("teamName") })
+    body: JSON.stringify({ teamName })
   });
   teamId = data.teamId;
   teamRoom = code;
   localStorage.setItem("iplTeamId", teamId);
   localStorage.setItem("iplTeamRoom", teamRoom);
   connect(code);
-});
+}
 
 $("fileInput").addEventListener("change", async (event) => {
   const file = event.target.files[0];
@@ -241,11 +276,9 @@ $("bidBtn").addEventListener("click", () => {
 });
 
 $("copyLink").addEventListener("click", () => navigator.clipboard.writeText($("shareLink").value));
-$("playersBtn").addEventListener("click", () => {
-  $("playersPanel").classList.toggle("hidden");
-  $("playersBtn").textContent = $("playersPanel").classList.contains("hidden") ? "Show Players List" : "Hide Players List";
-});
-$("closeResult").addEventListener("click", () => $("resultModal").classList.add("hidden"));
+$("playersBtn").addEventListener("click", () => $("playersPanel").classList.toggle("hidden"));
+$("closePlayers").addEventListener("click", () => $("playersPanel").classList.add("hidden"));
+$("closeResult").addEventListener("click", closeResult);
 
 setInterval(tick, 250);
 if (roomCode) {

@@ -18,7 +18,7 @@ Open `http://localhost:3000`.
 4. Share the room link with friends.
 5. Start the auction.
 
-The host can pause/resume the live auction and skip the current player. Every player gets a 10 second timer, and every new bid resets it. When the timer reaches zero, the player is sold to the highest bidder or marked unsold if there is no bid.
+The host can join as a bidding team, pause/resume the live auction, and skip the current player. Every player gets a 15 second timer, and every new bid resets it. When the timer reaches zero, the player is sold to the highest bidder or marked unsold if there is no bid. The sold/unsold popup is shown briefly before the next player appears.
 
 ## Player Sheet Columns
 

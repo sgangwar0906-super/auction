@@ -68,13 +68,19 @@
               <button id="skipBtn" class="ghost hidden">Skip Player</button>
               <button id="pauseBtn" class="ghost hidden">Pause Auction</button>
               <button id="startBtn" class="ghost hidden">Start Auction</button>
-              <button id="playersBtn" class="ghost" type="button">Show Players List</button>
+              <button id="playersBtn" class="ghost" type="button">Players List</button>
             </div>
             <p id="message" class="message"></p>
           </div>
 
           <aside class="panel host-panel hidden" id="hostPanel">
             <h2>Host Controls</h2>
+            <form id="hostTeamForm" class="mini-form">
+              <label>Host team name
+                <input name="teamName" maxlength="32" placeholder="Host Super Kings">
+              </label>
+              <button type="submit">Join as Host Team</button>
+            </form>
             <label>Upload Excel or CSV
               <input id="fileInput" type="file" accept=".xlsx,.csv">
             </label>
@@ -87,22 +93,24 @@
         </section>
 
         <section class="grid two lower">
-          <div class="panel">
+          <div class="panel teams-panel">
             <h2 id="leaderboardTitle">Teams</h2>
             <div id="leaderboard" class="leaderboard"></div>
           </div>
-          <div class="panel">
-            <h2>Auction Queue</h2>
-            <div id="queue" class="queue"></div>
-          </div>
-        </section>
-
-        <section id="playersPanel" class="panel lower hidden">
-          <h2>Players List</h2>
-          <div id="playersList" class="queue"></div>
         </section>
       </section>
     </main>
+
+    <aside id="playersPanel" class="players-drawer hidden">
+      <div class="drawer-head">
+        <div>
+          <p class="eyebrow">Auction pool</p>
+          <h2>Players List</h2>
+        </div>
+        <button id="closePlayers" class="ghost" type="button">Close</button>
+      </div>
+      <div id="playersList" class="queue"></div>
+    </aside>
 
     <div id="resultModal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-card">

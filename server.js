@@ -7,6 +7,8 @@ const zlib = require("zlib");
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 const rooms = new Map();
+const AUCTION_MS = 15000;
+const RESULT_MS = 1000;
 
 const ORDER = [
   "marquee",
@@ -199,7 +201,19 @@ function rowsToPlayers(rows) {
 
 function sortPlayers(players) {
   const rank = new Map(ORDER.map((name, i) => [name, i]));
-  return players.sort((a, b) => (rank.get(a.set) ?? 99) - (rank.get(b.set) ?? 99));
+  const buckets = new Map();
+  for (const player of players) {
+    const key = rank.get(player.set) ?? 99;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(player);
+  }
+  for (const bucket of buckets.values()) {
+    for (let i = bucket.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(i + 1);
+      [bucket[i], bucket[j]] = [bucket[j], bucket[i]];
+    }
+  }
+  return [...buckets.keys()].sort((a, b) => a - b).flatMap((key) => buckets.get(key));
 }
 
 function publicRoom(room) {
@@ -213,7 +227,15 @@ function publicRoom(room) {
       spent: roster.reduce((sum, p) => sum + p.soldFor, 0),
       remaining: team.budget - roster.reduce((sum, p) => sum + p.soldFor, 0),
       points: roster.reduce((sum, p) => sum + p.points, 0),
-      players: roster.length
+      players: roster.length,
+      squad: roster.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        set: p.set,
+        soldFor: p.soldFor,
+        points: p.points
+      }))
     };
   });
   return {
@@ -246,6 +268,11 @@ function clearClock(room) {
   room.timerEndsAt = null;
 }
 
+function clearResultDelay(room) {
+  if (room.resultTimer) clearTimeout(room.resultTimer);
+  room.resultTimer = null;
+}
+
 function pauseClock(room) {
   if (room.timer) clearTimeout(room.timer);
   room.timer = null;
@@ -255,6 +282,7 @@ function pauseClock(room) {
 
 function nextUnsold(room) {
   clearClock(room);
+  clearResultDelay(room);
   room.currentBid = 0;
   room.highestBidder = null;
   room.currentIndex += 1;
@@ -272,12 +300,13 @@ function nextUnsold(room) {
   }
 }
 
-function sellActive(room) {
+function settleActive(room, forcedUnsold = false) {
   const player = room.players[room.currentIndex];
   if (!player || player.status !== "waiting") return;
-  if (!room.highestBidder) {
+  clearClock(room);
+  if (!room.highestBidder || forcedUnsold) {
     player.status = "unsold";
-    room.message = `${player.name} went unsold.`;
+    room.message = forcedUnsold ? `${player.name} marked unsold by host.` : `${player.name} went unsold.`;
     room.lastResult = {
       id: `${player.id}-${Date.now()}`,
       type: "unsold",
@@ -299,11 +328,22 @@ function sellActive(room) {
       amount: room.currentBid
     };
   }
-  nextUnsold(room);
   broadcast(room);
+  const settledId = player.id;
+  room.resultTimer = setTimeout(() => {
+    const current = room.players[room.currentIndex];
+    if (current && current.id === settledId && current.status !== "waiting") {
+      nextUnsold(room);
+      broadcast(room);
+    }
+  }, RESULT_MS);
 }
 
-function startClock(room, durationMs = 10000) {
+function sellActive(room) {
+  settleActive(room);
+}
+
+function startClock(room, durationMs = AUCTION_MS) {
   clearClock(room);
   room.pausedRemainingMs = null;
   room.timerEndsAt = Date.now() + durationMs;
@@ -338,6 +378,7 @@ async function api(req, res) {
         highestBidder: null,
         timer: null,
         timerEndsAt: null,
+        resultTimer: null,
         pausedRemainingMs: null,
         clients: new Set(),
         lastResult: null,
@@ -390,6 +431,7 @@ async function api(req, res) {
       room.currentIndex = -1;
       room.status = "lobby";
       room.pausedRemainingMs = null;
+      clearResultDelay(room);
       room.message = `${room.players.length} players loaded.`;
       room.lastResult = null;
       nextUnsold(room);
@@ -415,6 +457,8 @@ async function api(req, res) {
       const room = requireRoom(req.url.split("/")[3]);
       requireHost(room, req.headers["x-host-token"]);
       if (room.status !== "live") throw new Error("Only a live auction can be paused.");
+      const player = room.players[room.currentIndex];
+      if (!player || player.status !== "waiting" || !room.timerEndsAt) throw new Error("Wait for the next player before pausing.");
       pauseClock(room);
       room.status = "paused";
       room.message = "Auction paused by host.";
@@ -427,7 +471,7 @@ async function api(req, res) {
       requireHost(room, req.headers["x-host-token"]);
       if (room.status !== "paused") throw new Error("Auction is not paused.");
       room.status = "live";
-      if (room.players[room.currentIndex]) startClock(room, room.pausedRemainingMs || 10000);
+      if (room.players[room.currentIndex]) startClock(room, room.pausedRemainingMs || AUCTION_MS);
       room.message = "Auction resumed by host.";
       broadcast(room);
       return send(res, 200, publicRoom(room));
@@ -439,17 +483,7 @@ async function api(req, res) {
       const player = room.players[room.currentIndex];
       if (!player) throw new Error("No active player.");
       if (room.status === "paused") room.status = "live";
-      player.status = "unsold";
-      room.lastResult = {
-        id: `${player.id}-${Date.now()}`,
-        type: "unsold",
-        player: player.name,
-        team: null,
-        amount: 0
-      };
-      room.message = `${player.name} marked unsold by host.`;
-      nextUnsold(room);
-      broadcast(room);
+      settleActive(room, true);
       return send(res, 200, publicRoom(room));
     }
 
@@ -461,6 +495,7 @@ async function api(req, res) {
       if (room.status !== "live") throw new Error(room.status === "paused" ? "Auction is paused." : "Auction is not live.");
       if (!team) throw new Error("Join with a team before bidding.");
       if (!player) throw new Error("No active player.");
+      if (player.status !== "waiting") throw new Error("Wait for the next player.");
       const roster = room.players.filter((p) => p.soldTo === team.id);
       const remaining = team.budget - roster.reduce((sum, p) => sum + p.soldFor, 0);
       const nextBid = Math.max(player.basePrice, room.currentBid + (room.highestBidder ? room.bidStep : 0));
